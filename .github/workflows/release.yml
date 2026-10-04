@@ -1,0 +1,67 @@
+name: Build and Publish Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versão da release (ex.: 0.28.5)"
+        required: true
+        type: string
+      release_name:
+        description: "Nome da release"
+        required: false
+        default: "EURO TRUCK AI"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Atualizar VERSION.txt
+        shell: pwsh
+        run: |
+          "${{ inputs.version }}" | Set-Content -Encoding utf8 VERSION.txt
+
+      - name: Verificar Python
+        shell: pwsh
+        run: |
+          python -m py_compile euro_truck_ai.py telemetry.py world_context.py trip_context.py poi_context.py map_data.py save_decoder.py updater.py
+
+      - name: Criar pacote ZIP
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          $packageRoot = "EURO_TRUCK_AI_v$version"
+          New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
+
+          Get-ChildItem -Force | Where-Object {
+            $_.Name -notin @(".git", ".github", $packageRoot, "__pycache__")
+          } | ForEach-Object {
+            Copy-Item $_.FullName -Destination $packageRoot -Recurse -Force
+          }
+
+          Get-ChildItem -Path $packageRoot -Recurse -Directory -Filter "__pycache__" |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+          $zip = "EURO_TRUCK_AI_v$version.zip"
+          Compress-Archive -Path "$packageRoot/*" -DestinationPath $zip -Force
+
+      - name: Publicar Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ inputs.version }}"
+          name: "${{ inputs.release_name }} v${{ inputs.version }}"
+          generate_release_notes: true
+          files: "EURO_TRUCK_AI_v${{ inputs.version }}.zip"
